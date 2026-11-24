@@ -334,7 +334,8 @@ def train_seg(net, train_data=None, train_labels=None, train_files=None,
               channel_axis=None, rgb=False, normalize=True, compute_flows=False,
               save_path=None, save_every=100, save_each=False, nimg_per_epoch=None,
               nimg_test_per_epoch=None, rescale=True, scale_range=None, bsize=224,
-              min_train_masks=5, model_name=None):
+              min_train_masks=5, model_name=None, *, on_step=None,
+              on_validation_end=None, validate_each_epoch=False):
     """
     Train the network with images for segmentation.
 
@@ -369,6 +370,9 @@ def train_seg(net, train_data=None, train_labels=None, train_files=None,
         rescale (bool, optional): Boolean - whether or not to rescale images during training. Defaults to True.
         min_train_masks (int, optional): Integer - minimum number of masks an image must have to use in the training set. Defaults to 5.
         model_name (str, optional): String - name of the network. Defaults to None.
+        on_step (callable, optional): Called after each optimizer update with the batch loss.
+        on_validation_end (callable, optional): Called after all batches in a scheduled validation pass.
+        validate_each_epoch (bool): Validate every epoch instead of the native schedule.
 
     Returns:
         tuple: A tuple containing the path to the saved model weights, training losses, and test losses.
@@ -454,6 +458,9 @@ def train_seg(net, train_data=None, train_labels=None, train_files=None,
 
     train_logger.info(f">>> saving model to {filename}")
 
+    steps_per_epoch = (nimg_per_epoch + batch_size - 1) // batch_size
+    total_steps = n_epochs * steps_per_epoch
+    step = 0
     lavg, nsum = 0, 0
     train_losses, test_losses = np.zeros(n_epochs), np.zeros(n_epochs)
     for iepoch in range(n_epochs):
@@ -489,6 +496,10 @@ def train_seg(net, train_data=None, train_labels=None, train_files=None,
             loss.backward()
             optimizer.step()
             train_loss = loss.item()
+            step += 1
+            if on_step is not None:
+                on_step(epoch=iepoch + 1, step=step, total_steps=total_steps,
+                        loss=train_loss, learning_rate=float(optimizer.param_groups[0]["lr"]))
             train_loss *= len(imgi)
 
             # keep track of average training loss across epochs
@@ -498,7 +509,7 @@ def train_seg(net, train_data=None, train_labels=None, train_files=None,
             train_losses[iepoch] += train_loss
         train_losses[iepoch] /= nimg_per_epoch
 
-        if iepoch == 5 or iepoch % 10 == 0:
+        if validate_each_epoch or iepoch == 5 or iepoch % 10 == 0:
             lavgt = 0.
             if test_data is not None or test_files is not None:
                 np.random.seed(42)
@@ -529,6 +540,9 @@ def train_seg(net, train_data=None, train_labels=None, train_files=None,
                         lavgt += test_loss
                 lavgt /= len(rperm)
                 test_losses[iepoch] = lavgt
+                if on_validation_end is not None:
+                    on_validation_end(epoch=iepoch + 1, step=step, total_steps=total_steps,
+                                      train_loss=float(train_losses[iepoch]), val_loss=float(lavgt))
             lavg /= nsum
             train_logger.info(
                 f"{iepoch}, train_loss={lavg:.4f}, test_loss={lavgt:.4f}, LR={LR[iepoch]:.6f}, time {time.time()-t0:.2f}s"
