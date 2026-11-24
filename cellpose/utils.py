@@ -569,12 +569,10 @@ def diameters(masks):
     (1.0, array([1.41421356, 1.0, 1.0]))
     """
     uniq, counts = fastremap.unique(masks.astype("int32"), return_counts=True)
-    counts = counts[1:]
-    md = np.median(counts**0.5)
-    if np.isnan(md):
-        md = 0
-    md /= (np.pi**0.5) / 2
-    return md, counts**0.5
+    sqrt_areas = np.sqrt(counts[uniq != 0])
+    if not sqrt_areas.size:
+        return 0.0, sqrt_areas
+    return 2.0 * np.median(sqrt_areas) / np.sqrt(np.pi), sqrt_areas
 
 
 def radius_distribution(masks, bins):
