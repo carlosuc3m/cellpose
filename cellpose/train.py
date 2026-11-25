@@ -335,7 +335,7 @@ def train_seg(net, train_data=None, train_labels=None, train_files=None,
               save_path=None, save_every=100, save_each=False, nimg_per_epoch=None,
               nimg_test_per_epoch=None, rescale=True, scale_range=None, bsize=224,
               min_train_masks=5, model_name=None, *, on_step=None,
-              on_validation_end=None, validate_each_epoch=False):
+              on_validation_end=None, validate_each_epoch=False, on_train_begin=None, start_epoch=0):
     """
     Train the network with images for segmentation.
 
@@ -372,6 +372,8 @@ def train_seg(net, train_data=None, train_labels=None, train_files=None,
         model_name (str, optional): String - name of the network. Defaults to None.
         on_step (callable, optional): Called after each optimizer update with the batch loss.
         on_validation_end (callable, optional): Called after all batches in a scheduled validation pass.
+        on_train_begin (callable, optional): Receives optimizer, mutable epoch LR table and batch count before training.
+        start_epoch (int, optional): Number of completed epochs when restoring an epoch checkpoint.
         validate_each_epoch (bool): Validate every epoch instead of the native schedule.
 
     Returns:
@@ -460,10 +462,14 @@ def train_seg(net, train_data=None, train_labels=None, train_files=None,
 
     steps_per_epoch = (nimg_per_epoch + batch_size - 1) // batch_size
     total_steps = n_epochs * steps_per_epoch
-    step = 0
+    if not 0 <= start_epoch < n_epochs:
+        raise ValueError("start_epoch must precede n_epochs")
+    if on_train_begin is not None:
+        on_train_begin(optimizer, LR, steps_per_epoch)
+    step = start_epoch * steps_per_epoch
     lavg, nsum = 0, 0
     train_losses, test_losses = np.zeros(n_epochs), np.zeros(n_epochs)
-    for iepoch in range(n_epochs):
+    for iepoch in range(start_epoch, n_epochs):
         np.random.seed(iepoch)
         if nimg != nimg_per_epoch:
             # choose random images for epoch with probability train_probs
